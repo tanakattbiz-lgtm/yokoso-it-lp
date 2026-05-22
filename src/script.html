@@ -1,0 +1,235 @@
+(function () {
+  'use strict';
+
+  document.documentElement.classList.add('js-enabled');
+
+  const header = document.querySelector('.site-header');
+  const menuButton = document.querySelector('.menu-toggle');
+  const nav = document.querySelector('.site-nav');
+  const form = document.getElementById('contactForm');
+  const submitButton = document.getElementById('submitButton');
+  const formMessage = document.getElementById('formMessage');
+
+  function getHeaderOffset() {
+    if (!header) return 0;
+    return Math.ceil(header.getBoundingClientRect().height) + 14;
+  }
+
+  function closeMenu() {
+    if (!menuButton || !nav) return;
+    menuButton.classList.remove('is-open');
+    nav.classList.remove('is-open');
+    menuButton.setAttribute('aria-expanded', 'false');
+    document.body.classList.remove('menu-open');
+  }
+
+  function openMenu() {
+    if (!menuButton || !nav) return;
+    menuButton.classList.add('is-open');
+    nav.classList.add('is-open');
+    menuButton.setAttribute('aria-expanded', 'true');
+    document.body.classList.add('menu-open');
+  }
+
+  function scrollToSection(id) {
+    const targetId = id || 'top';
+    const target = targetId === 'top' ? document.body : document.getElementById(targetId);
+    if (!target) return;
+
+    const top = targetId === 'top'
+      ? 0
+      : target.getBoundingClientRect().top + window.pageYOffset - getHeaderOffset();
+
+    window.scrollTo({
+      top: Math.max(top, 0),
+      behavior: 'smooth'
+    });
+
+    if (window.history && typeof window.history.replaceState === 'function') {
+      const hash = targetId === 'top' ? '#top' : '#' + targetId;
+      window.history.replaceState(null, document.title, hash);
+    }
+  }
+
+  document.querySelectorAll('[data-scroll]').forEach(function (link) {
+    link.addEventListener('click', function (event) {
+      event.preventDefault();
+      event.stopPropagation();
+      closeMenu();
+      scrollToSection(link.getAttribute('data-scroll'));
+    });
+  });
+
+  if (menuButton && nav) {
+    menuButton.addEventListener('click', function (event) {
+      event.preventDefault();
+      event.stopPropagation();
+      const isOpen = menuButton.getAttribute('aria-expanded') === 'true';
+      if (isOpen) {
+        closeMenu();
+      } else {
+        openMenu();
+      }
+    });
+
+    document.addEventListener('keydown', function (event) {
+      if (event.key === 'Escape') closeMenu();
+    });
+
+    document.addEventListener('click', function (event) {
+      if (!nav.classList.contains('is-open')) return;
+      if (nav.contains(event.target) || menuButton.contains(event.target)) return;
+      closeMenu();
+    });
+  }
+
+  function showMessage(type, text) {
+    if (!formMessage) return;
+    formMessage.className = 'form-message is-visible is-' + type;
+    formMessage.textContent = text;
+  }
+
+  function clearMessage() {
+    if (!formMessage) return;
+    formMessage.className = 'form-message';
+    formMessage.textContent = '';
+  }
+
+  function setSubmitting(isSubmitting) {
+    if (!submitButton) return;
+    submitButton.disabled = isSubmitting;
+    submitButton.textContent = isSubmitting ? '送信中です...' : '相談内容を送信する';
+  }
+
+  function validateForm() {
+    if (!form) return false;
+
+    const requiredFields = Array.from(form.querySelectorAll('[required]'));
+    const invalidField = requiredFields.find(function (field) {
+      return !String(field.value || '').trim();
+    });
+
+    if (invalidField) {
+      invalidField.focus();
+      showMessage('error', '必須項目を入力してください。');
+      return false;
+    }
+
+    const email = form.elements.email;
+    if (email && email.value && !email.checkValidity()) {
+      email.focus();
+      showMessage('error', 'メールアドレスの形式を確認してください。');
+      return false;
+    }
+
+    const toolsGroup = form.querySelector('[data-required-group="currentTools"]');
+    const selectedTools = form.querySelectorAll('input[name="currentTools"]:checked');
+    if (selectedTools.length === 0) {
+      if (toolsGroup) toolsGroup.classList.add('is-invalid');
+      const firstTool = form.querySelector('input[name="currentTools"]');
+      if (firstTool) firstTool.focus();
+      showMessage('error', '現在使っているものを1つ以上選択してください。');
+      return false;
+    }
+
+    if (toolsGroup) toolsGroup.classList.remove('is-invalid');
+    return true;
+  }
+
+  function buildFormData() {
+    const data = new FormData(form);
+    const currentTools = data.getAll('currentTools').join(', ');
+    const messageParts = [];
+    const baseMessage = String(data.get('message') || '').trim();
+    const reference = String(data.get('reference') || '').trim();
+    const screenImage = String(data.get('screenImage') || '').trim();
+
+    if (baseMessage) messageParts.push(baseMessage);
+    if (reference) messageParts.push('参考資料: ' + reference);
+    if (screenImage) messageParts.push('作りたい画面のイメージ: ' + screenImage);
+
+    return {
+      company: String(data.get('company') || '').trim(),
+      name: String(data.get('name') || '').trim(),
+      email: String(data.get('email') || '').trim(),
+      phone: String(data.get('phone') || '').trim(),
+      consultation: String(data.get('consultation') || '').trim(),
+      problem: String(data.get('problem') || '').trim(),
+      currentTools: currentTools,
+      deadline: String(data.get('deadline') || '').trim(),
+      demoRequest: String(data.get('demoRequest') || '').trim(),
+      users: String(data.get('users') || '').trim(),
+      mobileSupport: String(data.get('mobileSupport') || '').trim(),
+      message: messageParts.join('\n')
+    };
+  }
+
+  if (form) {
+    form.querySelectorAll('input[name="currentTools"]').forEach(function (checkbox) {
+      checkbox.addEventListener('change', function () {
+        const group = form.querySelector('[data-required-group="currentTools"]');
+        if (group && form.querySelectorAll('input[name="currentTools"]:checked').length > 0) {
+          group.classList.remove('is-invalid');
+        }
+      });
+    });
+
+    form.addEventListener('submit', function (event) {
+      event.preventDefault();
+      event.stopPropagation();
+      clearMessage();
+
+      if (!validateForm()) return;
+
+      if (!window.google || !google.script || !google.script.run) {
+        showMessage('error', '送信環境を確認できませんでした。GAS Webアプリとして開いてから再度お試しください。');
+        return;
+      }
+
+      setSubmitting(true);
+      showMessage('loading', '送信中です。少しだけお待ちください。');
+
+      google.script.run
+        .withSuccessHandler(function (response) {
+          setSubmitting(false);
+
+          if (response && response.success) {
+            showMessage('success', response.message || 'お問い合わせありがとうございます。内容を確認のうえ、折り返しご連絡いたします。');
+            form.reset();
+            const group = form.querySelector('[data-required-group="currentTools"]');
+            if (group) group.classList.remove('is-invalid');
+            return;
+          }
+
+          showMessage('error', response && response.message ? response.message : '送信中にエラーが発生しました。時間をおいて再度お試しください。');
+        })
+        .withFailureHandler(function () {
+          setSubmitting(false);
+          showMessage('error', '送信中にエラーが発生しました。時間をおいて再度お試しください。');
+        })
+        .submitContactForm(buildFormData());
+    });
+  }
+
+  const fadeItems = document.querySelectorAll('.fade-item');
+  if ('IntersectionObserver' in window && fadeItems.length) {
+    const observer = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (!entry.isIntersecting) return;
+        entry.target.classList.add('is-visible');
+        observer.unobserve(entry.target);
+      });
+    }, {
+      threshold: 0.12,
+      rootMargin: '0px 0px -40px 0px'
+    });
+
+    fadeItems.forEach(function (item) {
+      observer.observe(item);
+    });
+  } else {
+    fadeItems.forEach(function (item) {
+      item.classList.add('is-visible');
+    });
+  }
+})();
